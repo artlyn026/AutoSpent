@@ -16,6 +16,14 @@ class TransactionRepository(
         return transactionDao.getTransactionsBySource(isManual)
     }
 
+    fun getTransactionsByMonth(startTimestamp: Long, endTimestamp: Long): Flow<List<TransactionWithCategory>> {
+        return transactionDao.getTransactionsByMonth(startTimestamp, endTimestamp)
+    }
+
+    fun getCategorySpendingSummaryByMonth(startTimestamp: Long, endTimestamp: Long): Flow<List<CategorySpendingSummary>> {
+        return transactionDao.getCategorySpendingSummaryByMonth(startTimestamp, endTimestamp)
+    }
+
     fun getTotalSpendingThisMonth(): Flow<Double?> {
         val calendar = Calendar.getInstance().apply {
             set(Calendar.DAY_OF_MONTH, 1)

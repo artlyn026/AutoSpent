@@ -17,18 +17,22 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.FinzyApplication
-import com.example.R
 import com.example.data.CategoryEntity
 import com.example.data.CategorySpendingSummary
 import com.example.databinding.FragmentAnalyticsBinding
 import com.example.databinding.ItemCategoryManageBinding
+import com.example.ui.custom.DonutChartView
 import com.example.ui.dialog.EditCategoryDialogFragment
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.NumberFormat
+import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Locale
 
 class AnalyticsFragment : Fragment() {
@@ -42,6 +46,11 @@ class AnalyticsFragment : Fragment() {
 
     private lateinit var manageAdapter: CategoryManageAdapter
 
+    // State for selected month filter (default: current month)
+    private val selectedCalendar: Calendar = Calendar.getInstance()
+    private val monthFormat = SimpleDateFormat("MMMM yyyy", Locale("id", "ID"))
+    private val selectedMonthRange = MutableStateFlow(HistoryFragment.calculateMonthRange(selectedCalendar))
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -54,8 +63,38 @@ class AnalyticsFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        setupMonthNavigation()
         setupCategoryManagement()
         observeData()
+    }
+
+    private fun setupMonthNavigation() {
+        updateMonthDisplay()
+
+        binding.btnPrevMonth.setOnClickListener {
+            selectedCalendar.add(Calendar.MONTH, -1)
+            onMonthChanged()
+        }
+
+        binding.btnNextMonth.setOnClickListener {
+            selectedCalendar.add(Calendar.MONTH, 1)
+            onMonthChanged()
+        }
+
+        // Tap label to reset to current month
+        binding.layoutMonthLabel.setOnClickListener {
+            selectedCalendar.timeInMillis = System.currentTimeMillis()
+            onMonthChanged()
+        }
+    }
+
+    private fun onMonthChanged() {
+        updateMonthDisplay()
+        selectedMonthRange.value = HistoryFragment.calculateMonthRange(selectedCalendar)
+    }
+
+    private fun updateMonthDisplay() {
+        binding.tvCurrentMonth.text = monthFormat.format(selectedCalendar.time)
     }
 
     private fun setupCategoryManagement() {
@@ -113,16 +152,19 @@ class AnalyticsFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                combine(
-                    repo.allCategories,
-                    repo.categorySpendingSummary
-                ) { categories, summaries ->
-                    Pair(categories, summaries)
+                // Reactively observe categories and the monthly category spending summary
+                selectedMonthRange.flatMapLatest { (start, end) ->
+                    combine(
+                        repo.allCategories,
+                        repo.getCategorySpendingSummaryByMonth(start, end)
+                    ) { categories, summaries ->
+                        Pair(categories, summaries)
+                    }
                 }.collect { (categories, summaries) ->
                     // 1. Update Category Management List
                     manageAdapter.submitList(categories)
 
-                    // 2. Update Dynamic Spending Breakdown Bars
+                    // 2. Update Dynamic Spending Breakdown Bars and DonutChartView for selected month
                     renderSpendingBreakdown(summaries)
                 }
             }
@@ -135,17 +177,24 @@ class AnalyticsFragment : Fragment() {
 
         val activeSummaries = summaries.filter { it.totalAmount > 0.0 }
         val grandTotal = activeSummaries.sumOf { it.totalAmount }
+        val monthLabel = monthFormat.format(selectedCalendar.time)
 
         if (grandTotal <= 0.0 || activeSummaries.isEmpty()) {
             binding.tvEmptySpendingState.visibility = View.VISIBLE
+            binding.tvEmptySpendingState.text = "Belum ada transaksi pengeluaran tercatat pada $monthLabel."
             binding.tvHealthScore.text = "100 / 100"
-            binding.tvHealthScoreDesc.text = "Belum ada transaksi pengeluaran bulan ini."
+            binding.tvHealthScoreDesc.text = "Belum ada pengeluaran tercatat pada $monthLabel."
+
+            val emptySlices = listOf(
+                DonutChartView.DonutSlice("Kosong", 100f, Color.parseColor("#E2E8F0"))
+            )
+            binding.donutChartView.setChartData(emptySlices, "0 Tx", monthLabel)
             return
         }
 
         binding.tvEmptySpendingState.visibility = View.GONE
 
-        // Health Score calculation: Penalty if high Uncategorized percentage
+        // Health Score calculation: Penalty if high Uncategorized percentage in this month
         val uncategorizedSpend = summaries
             .filter { it.categoryName.equals(CategoryEntity.UNCATEGORIZED_NAME, ignoreCase = true) }
             .sumOf { it.totalAmount }
@@ -155,12 +204,28 @@ class AnalyticsFragment : Fragment() {
 
         binding.tvHealthScore.text = "$healthScore / 100"
         if (uncategorizedRatio > 0.4) {
-            binding.tvHealthScoreDesc.text = "Perhatian: Anda memiliki banyak transaksi 'Belum Dikategorikan'. Ketuk transaksi di Riwayat untuk menetapkan kategori!"
+            binding.tvHealthScoreDesc.text = "Perhatian: $monthLabel memiliki banyak transaksi 'Belum Dikategorikan'. Ketuk transaksi di Riwayat untuk menetapkan kategori!"
         } else {
-            binding.tvHealthScoreDesc.text = "Bagus! Sebagian besar pengeluaran Anda telah diklasifikasikan dengan rapi."
+            binding.tvHealthScoreDesc.text = "Bagus! Sebagian besar pengeluaran pada $monthLabel telah diklasifikasikan dengan rapi."
         }
 
-        // Dynamically add category progress bars for each category with spending
+        // 1. Update DonutChartView with real monthly category distribution
+        val totalTransactions = activeSummaries.sumOf { it.transactionCount }
+        val slices = activeSummaries.map { summary ->
+            val colorInt = try {
+                Color.parseColor(summary.categoryColor)
+            } catch (e: Exception) {
+                Color.parseColor("#94A3B8")
+            }
+            DonutChartView.DonutSlice(
+                category = summary.categoryName,
+                value = summary.totalAmount.toFloat(),
+                color = colorInt
+            )
+        }
+        binding.donutChartView.setChartData(slices, "$totalTransactions Tx", monthLabel)
+
+        // 2. Dynamically add category progress bars for each category with spending in this month
         val density = resources.displayMetrics.density
 
         for (summary in activeSummaries) {

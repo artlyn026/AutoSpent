@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.CategoryEntity
 import com.example.service.NotificationParser
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -121,4 +122,89 @@ class ExampleRobolectricTest {
         com.example.service.KeepAliveService.start(context)
         com.example.service.ReviveWorker.schedule(context)
     }
+
+    @Test
+    fun `test month range calculation`() {
+        val cal = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.YEAR, 2026)
+            set(java.util.Calendar.MONTH, java.util.Calendar.NOVEMBER)
+            set(java.util.Calendar.DAY_OF_MONTH, 15)
+        }
+        val (start, end) = com.example.ui.fragment.HistoryFragment.calculateMonthRange(cal)
+
+        val calCheckStart = java.util.Calendar.getInstance().apply { timeInMillis = start }
+        assertEquals(1, calCheckStart.get(java.util.Calendar.DAY_OF_MONTH))
+        assertEquals(0, calCheckStart.get(java.util.Calendar.HOUR_OF_DAY))
+
+        val calCheckEnd = java.util.Calendar.getInstance().apply { timeInMillis = end }
+        assertEquals(30, calCheckEnd.get(java.util.Calendar.DAY_OF_MONTH)) // Nov has 30 days
+        assertEquals(23, calCheckEnd.get(java.util.Calendar.HOUR_OF_DAY))
+        assertEquals(59, calCheckEnd.get(java.util.Calendar.MINUTE))
+    }
+
+    @Test
+    fun `test monthly database query isolation`() = kotlinx.coroutines.test.runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = androidx.room.Room.inMemoryDatabaseBuilder(
+            context,
+            com.example.data.AppDatabase::class.java
+        ).allowMainThreadQueries().build()
+
+        val catDao = db.categoryDao()
+        val txDao = db.transactionDao()
+
+        // Seed default categories
+        com.example.data.AppDatabase.seedDefaultCategories(catDao)
+        val categories = catDao.getCategoriesList()
+        val foodCat = categories.find { it.name == "Makanan & Minuman" } ?: categories.first()
+
+        // Nov 2026 timestamp
+        val calNov = java.util.Calendar.getInstance().apply {
+            set(2026, java.util.Calendar.NOVEMBER, 10, 12, 0, 0)
+        }
+        val novTx = com.example.data.TransactionEntity(
+            amount = 35000.0,
+            merchant = "Kopi Kenangan",
+            timestamp = calNov.timeInMillis,
+            categoryId = foodCat.id,
+            sourceApp = "GoPay",
+            isManual = false
+        )
+        txDao.insertTransaction(novTx)
+
+        // Oct 2026 timestamp
+        val calOct = java.util.Calendar.getInstance().apply {
+            set(2026, java.util.Calendar.OCTOBER, 10, 12, 0, 0)
+        }
+        val octTx = com.example.data.TransactionEntity(
+            amount = 50000.0,
+            merchant = "Supermarket",
+            timestamp = calOct.timeInMillis,
+            categoryId = foodCat.id,
+            sourceApp = "m-BCA",
+            isManual = false
+        )
+        txDao.insertTransaction(octTx)
+
+        // Query Nov
+        val (novStart, novEnd) = com.example.ui.fragment.HistoryFragment.calculateMonthRange(calNov)
+        val novList = txDao.getTransactionsByMonth(novStart, novEnd).first()
+        assertEquals(1, novList.size)
+        assertEquals("Kopi Kenangan", novList[0].merchant)
+
+        // Query Oct
+        val (octStart, octEnd) = com.example.ui.fragment.HistoryFragment.calculateMonthRange(calOct)
+        val octList = txDao.getTransactionsByMonth(octStart, octEnd).first()
+        assertEquals(1, octList.size)
+        assertEquals("Supermarket", octList[0].merchant)
+
+        // Verify Category Spending Summary By Month
+        val novSummary = txDao.getCategorySpendingSummaryByMonth(novStart, novEnd).first()
+        val novFoodSummary = novSummary.find { it.categoryId == foodCat.id }
+        assertNotNull(novFoodSummary)
+        assertEquals(35000.0, novFoodSummary!!.totalAmount, 0.01)
+
+        db.close()
+    }
 }
+

@@ -15,8 +15,13 @@ import com.example.data.TransactionWithCategory
 import com.example.databinding.FragmentHistoryBinding
 import com.example.ui.adapter.TransactionAdapter
 import com.example.ui.dialog.SelectCategoryBottomSheetDialog
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 
 class HistoryFragment : Fragment() {
 
@@ -25,6 +30,11 @@ class HistoryFragment : Fragment() {
 
     private lateinit var adapter: TransactionAdapter
     private var allTransactionsList: List<TransactionWithCategory> = emptyList()
+
+    // State for selected month (default: current month)
+    private val selectedCalendar: Calendar = Calendar.getInstance()
+    private val monthFormat = SimpleDateFormat("MMMM yyyy", Locale("id", "ID"))
+    private val selectedMonthRange = MutableStateFlow(calculateMonthRange(selectedCalendar))
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -39,6 +49,7 @@ class HistoryFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         setupRecyclerView()
+        setupMonthNavigation()
         setupFilterChips()
         observeTransactions()
     }
@@ -62,6 +73,35 @@ class HistoryFragment : Fragment() {
         binding.rvTransactions.adapter = adapter
     }
 
+    private fun setupMonthNavigation() {
+        updateMonthDisplay()
+
+        binding.btnPrevMonth.setOnClickListener {
+            selectedCalendar.add(Calendar.MONTH, -1)
+            onMonthChanged()
+        }
+
+        binding.btnNextMonth.setOnClickListener {
+            selectedCalendar.add(Calendar.MONTH, 1)
+            onMonthChanged()
+        }
+
+        // Tap label to reset to current month
+        binding.layoutMonthLabel.setOnClickListener {
+            selectedCalendar.timeInMillis = System.currentTimeMillis()
+            onMonthChanged()
+        }
+    }
+
+    private fun onMonthChanged() {
+        updateMonthDisplay()
+        selectedMonthRange.value = calculateMonthRange(selectedCalendar)
+    }
+
+    private fun updateMonthDisplay() {
+        binding.tvCurrentMonth.text = monthFormat.format(selectedCalendar.time)
+    }
+
     private fun setupFilterChips() {
         binding.chipGroupFilter.setOnCheckedStateChangeListener { _, checkedIds ->
             filterTransactions(checkedIds.firstOrNull())
@@ -73,8 +113,10 @@ class HistoryFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                // Real-time Flow observation of transactions joined with categories
-                repo.allTransactionsWithCategory.collectLatest { transactions ->
+                // Reactive query scoped strictly to the selected month's timestamp range
+                selectedMonthRange.flatMapLatest { (start, end) ->
+                    repo.getTransactionsByMonth(start, end)
+                }.collectLatest { transactions ->
                     allTransactionsList = transactions
                     val checkedChip = binding.chipGroupFilter.checkedChipId
                     filterTransactions(checkedChip)
@@ -91,11 +133,13 @@ class HistoryFragment : Fragment() {
         }
 
         adapter.submitList(filtered)
-        binding.tvTransactionCount.text = "${filtered.size} transaksi tercatat"
+        val monthLabel = monthFormat.format(selectedCalendar.time)
+        binding.tvTransactionCount.text = "${filtered.size} transaksi tercatat ($monthLabel)"
 
         if (filtered.isEmpty()) {
             binding.layoutEmptyState.visibility = View.VISIBLE
             binding.rvTransactions.visibility = View.GONE
+            binding.tvEmptyHistoryMessage.text = "Tidak ada transaksi tercatat pada $monthLabel."
         } else {
             binding.layoutEmptyState.visibility = View.GONE
             binding.rvTransactions.visibility = View.VISIBLE
@@ -109,5 +153,23 @@ class HistoryFragment : Fragment() {
 
     companion object {
         fun newInstance() = HistoryFragment()
+
+        fun calculateMonthRange(calendar: Calendar): Pair<Long, Long> {
+            val start = (calendar.clone() as Calendar).apply {
+                set(Calendar.DAY_OF_MONTH, 1)
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            val end = (calendar.clone() as Calendar).apply {
+                set(Calendar.DAY_OF_MONTH, start.getActualMaximum(Calendar.DAY_OF_MONTH))
+                set(Calendar.HOUR_OF_DAY, 23)
+                set(Calendar.MINUTE, 59)
+                set(Calendar.SECOND, 59)
+                set(Calendar.MILLISECOND, 999)
+            }
+            return Pair(start.timeInMillis, end.timeInMillis)
+        }
     }
 }
