@@ -1,0 +1,48 @@
+<resources>
+    <string name="app_name">AutoSpent</string>
+    <string name="app_subtitle">Finzy Smart Expense Guard</string>
+    <string name="nav_dashboard">Dashboard</string>
+    <string name="nav_history">History</string>
+    <string name="nav_analytics">Analytics</string>
+    <string name="nav_profile">Profile</string>
+
+    <!-- Dashboard -->
+    <string name="total_expense_month">Total Pengeluaran Bulan Ini</string>
+    <string name="remaining_budget">Sisa Anggaran</string>
+    <string name="monthly_budget_label">Batas Anggaran Bulanan: %1$s</string>
+    <string name="add_manual_transaction">Catat Pengeluaran</string>
+    <string name="simulate_notification">Simulasi Notifikasi E-Wallet</string>
+    <string name="anti_impulse_title">Gen-Z Anti-Impulse Guard</string>
+    <string name="anti_impulse_desc">Sistem memantau transaksi e-wallet (GoPay, OVO, ShopeePay, DANA) secara otomatis untuk mencegah impulsif buying.</string>
+    <string name="notification_access_warning">Izin Notifikasi Belum Aktif!</string>
+    <string name="grant_permission_btn">Aktifkan Akses Notifikasi</string>
+
+    <!-- History -->
+    <string name="transaction_history">Riwayat Transaksi</string>
+    <string name="filter_all">Semua</string>
+    <string name="filter_auto">Otomatis (E-Wallet)</string>
+    <string name="filter_manual">Manual</string>
+    <string name="empty_transactions">Belum ada transaksi tercatat.\nLakukan pembayaran e-wallet atau catat manual!</string>
+
+    <!-- Add Transaction Dialog -->
+    <string name="dialog_title_add">Tambah Transaksi Manual</string>
+    <string name="hint_amount">Nominal (Rp)</string>
+    <string name="hint_merchant">Merchant / Toko (contoh: Kopi Kenangan)</string>
+    <string name="category_label">Kategori</string>
+    <string name="btn_save">Simpan Transaksi</string>
+    <string name="btn_cancel">Batal</string>
+    <string name="amount_required">Nominal harus diisi</string>
+    <string name="merchant_required">Nama merchant harus diisi</string>
+
+    <!-- Profile -->
+    <string name="profile_title">Profil Mahasiswa &amp; Paket</string>
+    <string name="user_status_label">Status Pengguna</string>
+    <string name="user_tier_student">Student Saver (Level 2)</string>
+    <string name="toggle_free_mode">Free Mode</string>
+    <string name="toggle_premium_mode">Finzy Pro (Premium Mode)</string>
+    <string name="premium_description">Fitur Premium: Deteksi e-wallet tanpa batas, kustom peringatan anti-impulsif AI, dan ekspor laporan Technopreneurship ke CSV.</string>
+    <string name="budget_setting_label">Ubah Target Budget Bulanan</string>
+    <string name="btn_update_budget">Perbarui Budget</string>
+    <string name="listener_status_active">Layanan Listener Aktif</string>
+    <string name="listener_status_inactive">Layanan Listener Tidak Aktif</string>
+</resources>

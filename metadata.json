@@ -1,0 +1,6 @@
+{
+  "name": "AutoSpent",
+  "description": "Automated financial tracking and anti-impulsive spending assistant for Gen Z and students that detects e-wallet transactions in background.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
