@@ -68,6 +68,9 @@ interface TransactionDao {
     """)
     fun getCategorySpendingSummaryByMonth(startTimestamp: Long, endTimestamp: Long): Flow<List<CategorySpendingSummary>>
 
+    @Query("SELECT SUM(amount) FROM transactions WHERE timestamp >= :startTimestamp AND timestamp <= :endTimestamp")
+    fun getTotalSpendingByMonth(startTimestamp: Long, endTimestamp: Long): Flow<Double?>
+
     @Query("SELECT SUM(amount) FROM transactions WHERE timestamp >= :startOfMonth")
     fun getTotalSpendingThisMonth(startOfMonth: Long): Flow<Double?>
 

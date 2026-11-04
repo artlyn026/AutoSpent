@@ -14,7 +14,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [36])
 class ExampleRobolectricTest {
 
     @Test
@@ -203,6 +203,13 @@ class ExampleRobolectricTest {
         val novFoodSummary = novSummary.find { it.categoryId == foodCat.id }
         assertNotNull(novFoodSummary)
         assertEquals(35000.0, novFoodSummary!!.totalAmount, 0.01)
+
+        // Verify Total Spending By Month
+        val novTotal = txDao.getTotalSpendingByMonth(novStart, novEnd).first()
+        assertEquals(35000.0, novTotal ?: 0.0, 0.01)
+
+        val octTotal = txDao.getTotalSpendingByMonth(octStart, octEnd).first()
+        assertEquals(50000.0, octTotal ?: 0.0, 0.01)
 
         db.close()
     }

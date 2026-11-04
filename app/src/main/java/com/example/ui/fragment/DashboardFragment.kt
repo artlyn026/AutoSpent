@@ -18,14 +18,17 @@ import com.example.FinzyApplication
 import com.example.data.CategorySpendingSummary
 import com.example.data.TransactionWithCategory
 import com.example.databinding.FragmentDashboardBinding
-import com.example.service.TransactionNotificationListener
 import com.example.ui.custom.DonutChartView
 import com.example.ui.dialog.AddTransactionDialogFragment
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.NumberFormat
+import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Locale
 import kotlin.random.Random
 
@@ -37,6 +40,11 @@ class DashboardFragment : Fragment() {
     private val rupiahFormat = NumberFormat.getCurrencyInstance(Locale("id", "ID")).apply {
         maximumFractionDigits = 0
     }
+
+    // State for selected month navigation (default: current month)
+    private val selectedCalendar: Calendar = Calendar.getInstance()
+    private val monthFormat = SimpleDateFormat("MMMM yyyy", Locale("id", "ID"))
+    private val selectedMonthRange = MutableStateFlow(HistoryFragment.calculateMonthRange(selectedCalendar))
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -50,6 +58,7 @@ class DashboardFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        setupMonthNavigation()
         setupListeners()
         observeData()
     }
@@ -57,6 +66,37 @@ class DashboardFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         checkNotificationAccess()
+    }
+
+    private fun setupMonthNavigation() {
+        updateMonthDisplay()
+
+        binding.btnPrevMonth.setOnClickListener {
+            selectedCalendar.add(Calendar.MONTH, -1)
+            onMonthChanged()
+        }
+
+        binding.btnNextMonth.setOnClickListener {
+            selectedCalendar.add(Calendar.MONTH, 1)
+            onMonthChanged()
+        }
+
+        // Tap label to reset to current month
+        binding.layoutMonthLabel.setOnClickListener {
+            selectedCalendar.timeInMillis = System.currentTimeMillis()
+            onMonthChanged()
+        }
+    }
+
+    private fun onMonthChanged() {
+        updateMonthDisplay()
+        selectedMonthRange.value = HistoryFragment.calculateMonthRange(selectedCalendar)
+    }
+
+    private fun updateMonthDisplay() {
+        val monthName = monthFormat.format(selectedCalendar.time)
+        binding.tvCurrentMonth.text = monthName
+        binding.tvTotalExpenseLabel.text = "Total Pengeluaran ($monthName)"
     }
 
     private fun setupListeners() {
@@ -96,12 +136,15 @@ class DashboardFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                combine(
-                    repo.getTotalSpendingThisMonth(),
-                    repo.allTransactionsWithCategory,
-                    repo.categorySpendingSummary
-                ) { totalSpending, allItems, categorySummaries ->
-                    Triple(totalSpending ?: 0.0, allItems, categorySummaries)
+                // Reactive query scoped strictly to the selected month
+                selectedMonthRange.flatMapLatest { (start, end) ->
+                    combine(
+                        repo.getTotalSpendingByMonth(start, end),
+                        repo.getTransactionsByMonth(start, end),
+                        repo.getCategorySpendingSummaryByMonth(start, end)
+                    ) { totalSpending, allItems, categorySummaries ->
+                        Triple(totalSpending ?: 0.0, allItems, categorySummaries)
+                    }
                 }.collect { (total, allItems, categorySummaries) ->
                     val budgetLimit = prefs.getFloat("monthly_budget", 2500000f).toDouble()
 
@@ -132,7 +175,7 @@ class DashboardFragment : Fragment() {
                         binding.progressBudget.setIndicatorColor(Color.parseColor("#10B981"))
                     }
 
-                    // Dynamically update Donut Chart with real custom categories and custom colors
+                    // Dynamically update Donut Chart with real custom categories and custom colors for this month
                     updateDonutChart(allItems, categorySummaries, total)
                 }
             }
@@ -145,15 +188,13 @@ class DashboardFragment : Fragment() {
         total: Double
     ) {
         val activeSummaries = summaries.filter { it.totalAmount > 0.0 }
+        val monthLabel = monthFormat.format(selectedCalendar.time)
 
         if (items.isEmpty() || total <= 0.0 || activeSummaries.isEmpty()) {
-            val defaultSlices = listOf(
-                DonutChartView.DonutSlice("F&B", 40f, Color.parseColor("#F59E0B")),
-                DonutChartView.DonutSlice("Groceries", 25f, Color.parseColor("#10B981")),
-                DonutChartView.DonutSlice("Transport", 20f, Color.parseColor("#3B82F6")),
-                DonutChartView.DonutSlice("Others", 15f, Color.parseColor("#8B5CF6"))
+            val emptySlices = listOf(
+                DonutChartView.DonutSlice("Kosong", 100f, Color.parseColor("#E2E8F0"))
             )
-            binding.donutChartView.setChartData(defaultSlices, "0%", "Kosong")
+            binding.donutChartView.setChartData(emptySlices, "0 Tx", monthLabel)
             return
         }
 
@@ -170,7 +211,7 @@ class DashboardFragment : Fragment() {
             )
         }
 
-        binding.donutChartView.setChartData(slices, "${items.size}", "Transaksi")
+        binding.donutChartView.setChartData(slices, "${items.size} Tx", monthLabel)
     }
 
     /**
